@@ -1,6 +1,8 @@
 /** Chromiumに配布用の拡張を読み込み、画面・offscreen・解析Worker・Cookie送信をまとめて検証する。 */
 import { test as base, expect, chromium } from "@playwright/test";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createMockDlsite } from "./mock-dlsite.js";
 import { fixture, withPageDecorations } from "../helpers.js";
 
@@ -10,21 +12,135 @@ const test = base.extend({
     // Release用ZIPの検証では解凍したextensionを指定し、通常はビルド済みdistを使う。
     const path = resolve(process.env.SEIHEKI_EXTENSION_PATH ?? "dist");
     const mock = await createMockDlsite();
-    const context = await chromium.launchPersistentContext("", {
+    // 同じプロファイルで再起動し、除外設定が実際に端末内へ永続化されることも検証する。
+    const profile = await mkdtemp(join(tmpdir(), "seiheki-e2e-"));
+    const launch = () => chromium.launchPersistentContext(profile, {
       channel: "chromium", headless: true,
       viewport: { width: 340, height: 600 },
       args: [`--disable-extensions-except=${path}`, `--load-extension=${path}`, ...mock.args],
     });
+    let context;
     try {
+      context = await launch();
       const worker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
       const id = worker.url().split("/")[2];
-      await use({ context, worker, mock, popupUrl: `chrome-extension://${id}/popup.html` });
+      const extension = {
+        context, worker, mock, popupUrl: `chrome-extension://${id}/popup.html`,
+        async restart() {
+          await context.close();
+          context = await launch();
+          extension.context = context;
+          extension.worker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
+        },
+      };
+      await use(extension);
       expect(mock.errors).toEqual([]);
     } finally {
-      await context.close();
+      await context?.close();
       await mock.close();
+      await rm(profile, { recursive: true, force: true });
     }
   },
+});
+
+test("タグの除外が順位と投稿文に反映され、再集計とブラウザ再起動後も保持される", async ({ extension }, testInfo) => {
+  await mockDlsite(extension);
+  let popup = await extension.context.newPage();
+  await popup.goto(extension.popupUrl);
+  await popup.getByRole("button", { name: "購入履歴を集計する" }).click();
+  await expect(popup.locator("#result")).toBeVisible({ timeout: 20000 });
+  await expect(popup.locator("#tag-settings")).not.toHaveAttribute("open", "");
+  const requestsBeforeSettings = extension.mock.requests.length;
+  await popup.locator("#tag-settings summary").click();
+  const asmr = popup.getByRole("checkbox", { name: "ASMR", exact: true });
+  await asmr.check();
+  await expect(asmr).toBeChecked();
+  await expect(asmr).toBeEnabled();
+  await expect(asmr).toBeFocused();
+  await expect(popup.locator("#top-tags li").first()).toContainText("癒し");
+  await expect(popup.locator("#top-tags li")).toHaveCount(5);
+  await expect(popup.locator("#remaining-tags li")).toHaveCount(1);
+  await expect(popup.locator("#total-works")).toHaveText("7作品");
+  const draft = new URL(await popup.locator("#tweet").getAttribute("href"));
+  expect(draft.searchParams.get("text")).not.toContain("ASMR");
+  expect(draft.searchParams.get("text").match(/^\d\./gm)).toHaveLength(5);
+  expect(extension.mock.requests).toHaveLength(requestsBeforeSettings);
+  const job = await popup.evaluate(async () => (await chrome.storage.session.get("analysis")).analysis);
+  expect(job.counts).toContainEqual(["ASMR", 4]);
+  await popup.screenshot({ path: testInfo.outputPath("popup-exclusions.png"), fullPage: true });
+
+  await popup.close();
+  popup = await extension.context.newPage();
+  await popup.goto(extension.popupUrl);
+  await expect(popup.locator("#top-tags li").first()).toContainText("癒し");
+  await popup.getByRole("button", { name: "再集計", exact: true }).click();
+  await expect(popup.locator("#progress")).toBeVisible();
+  await expect(popup.locator("#result")).toBeVisible({ timeout: 20000 });
+  await expect(popup.locator("#top-tags li").first()).toContainText("癒し");
+
+  await extension.restart();
+  popup = await extension.context.newPage();
+  await popup.goto(extension.popupUrl);
+  await expect(popup.locator("#intro")).toBeVisible();
+  await popup.locator("#tag-settings summary").click();
+  await expect(popup.getByRole("checkbox", { name: "ASMR", exact: true })).toBeChecked();
+  // ログイン用のセッションCookieは再起動で消えるため、再ログインしてから再取得を検証する。
+  await mockDlsite(extension);
+  await popup.getByRole("button", { name: "購入履歴を集計する" }).click();
+  await expect(popup.locator("#result")).toBeVisible({ timeout: 20000 });
+  await expect(popup.locator("#top-tags li").first()).toContainText("癒し");
+  await popup.getByRole("button", { name: "データを削除" }).click();
+  await expect(popup.locator("#intro")).toBeVisible();
+  await expect(popup.locator("#tag-settings")).toBeHidden();
+  expect(await popup.evaluate(() => chrome.storage.local.get("excludedTags"))).toEqual({});
+  expect(await popup.evaluate(() => chrome.storage.session.get("analysis"))).toEqual({});
+});
+
+test("全タグ除外で投稿を隠し、チェック解除や一括解除で再取得せず復元できる", async ({ extension }) => {
+  await mockDlsite(extension);
+  const popup = await extension.context.newPage();
+  await popup.goto(extension.popupUrl);
+  await popup.getByRole("button", { name: "購入履歴を集計する" }).click();
+  await expect(popup.locator("#result")).toBeVisible({ timeout: 20000 });
+  const requestsBeforeSettings = extension.mock.requests.length;
+  await popup.locator("#tag-settings summary").click();
+  // 別のポップアップから同時に変更しても、両方のタグが保存されて画面も同期する。
+  const secondPopup = await extension.context.newPage();
+  await secondPopup.goto(extension.popupUrl);
+  await secondPopup.locator("#tag-settings summary").click();
+  await Promise.all([
+    popup.getByRole("checkbox", { name: "ASMR", exact: true }).check(),
+    secondPopup.getByRole("checkbox", { name: "癒し", exact: true }).check(),
+  ]);
+  for (const page of [popup, secondPopup]) {
+    await expect(page.getByRole("checkbox", { name: "ASMR", exact: true })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "癒し", exact: true })).toBeChecked();
+  }
+  await secondPopup.close();
+  const tags = await popup.getByRole("checkbox").evaluateAll((inputs) => inputs.map((input) => input.value));
+  expect(tags).toHaveLength(7);
+  for (const tag of tags) {
+    const input = popup.getByRole("checkbox", { name: tag, exact: true });
+    await input.check();
+    await expect(input).toBeChecked();
+    await expect(input).toBeEnabled();
+  }
+  await expect(popup.locator("#top-tags li")).toHaveCount(0);
+  await expect(popup.locator("#empty")).toHaveText("すべてのタグが除外されています。");
+  await expect(popup.locator("#tweet")).toBeHidden();
+  expect(await popup.locator("#tweet").getAttribute("href")).toBeNull();
+  await expect(popup.getByRole("checkbox")).toHaveCount(7);
+
+  await popup.getByRole("checkbox", { name: "ASMR", exact: true }).uncheck();
+  await expect(popup.locator("#tweet")).toHaveAttribute("href", /ASMR/u);
+  await expect(popup.locator("#top-tags li")).toHaveCount(1);
+  await popup.getByRole("button", { name: "除外をすべて解除" }).click();
+  await expect(popup.locator("#top-tags li")).toHaveCount(5);
+  await expect(popup.locator("#top-tags li").first()).toContainText("ASMR");
+  await expect(popup.locator("#remaining-tags li")).toHaveCount(2);
+  await expect(popup.getByRole("checkbox", { checked: true })).toHaveCount(0);
+  expect(await popup.evaluate(() => chrome.storage.local.get("excludedTags"))).toEqual({});
+  expect(extension.mock.requests).toHaveLength(requestsBeforeSettings);
 });
 
 async function mockDlsite({ context, mock }, { loggedIn = true, failWork = false, delayed = false, empty = false, loginMarkup = false } = {}) {

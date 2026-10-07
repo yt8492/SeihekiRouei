@@ -1,8 +1,8 @@
 /**
  * 拡張の操作と保存状態を管理するService Worker。
- * 集計はoffscreenに任せ、このファイルだけがchrome.storage.sessionを書き換える。
+ * 集計はoffscreenに任せ、集計状態と除外設定の書き込みをこのファイルに集約する。
  */
-import { STORAGE_KEY, newJob, viewOf, errorInfo, AnalysisError } from "./lib/model.js";
+import { STORAGE_KEY, EXCLUDED_TAGS_KEY, newJob, viewOf, errorInfo, AnalysisError } from "./lib/model.js";
 
 // 操作と進捗保存を直列化し、中止・削除後の遅い応答で結果が復活するのを防ぐ。
 let pending = Promise.resolve();
@@ -81,7 +81,27 @@ async function handle(message, sender) {
     case "CLEAR":
       await closeRunner();
       await chrome.storage.session.remove(STORAGE_KEY);
+      await chrome.storage.local.remove(EXCLUDED_TAGS_KEY);
       return { ok: true, view: viewOf(null) };
+    case "SET_TAG_EXCLUSION": {
+      if (typeof message.tag !== "string" || !message.tag || typeof message.excluded !== "boolean") {
+        throw new AnalysisError("INVALID_SETTING", "除外するタグを確認できませんでした。もう一度操作してください。");
+      }
+      // タグ単位で変更を直列化し、複数のポップアップからの操作でも設定を上書きしない。
+      const stored = await chrome.storage.local.get(EXCLUDED_TAGS_KEY);
+      const excluded = new Set(stored[EXCLUDED_TAGS_KEY] ?? []);
+      if (message.excluded) excluded.add(message.tag);
+      else excluded.delete(message.tag);
+      if (excluded.size) {
+        await chrome.storage.local.set({ [EXCLUDED_TAGS_KEY]: [...excluded].sort((a, b) => a.localeCompare(b, "ja")) });
+      } else {
+        await chrome.storage.local.remove(EXCLUDED_TAGS_KEY);
+      }
+      return { ok: true, view: viewOf(job) };
+    }
+    case "RESET_EXCLUSIONS":
+      await chrome.storage.local.remove(EXCLUDED_TAGS_KEY);
+      return { ok: true, view: viewOf(job) };
     case "CHECKPOINT":
       if (sender.url !== offscreenUrl) throw new Error("Invalid sender");
       // 別の集計、中止済みの集計、古い更新番号から届いた結果は保存しない。

@@ -12,7 +12,7 @@ p { margin: 0 0 12px; line-height: 1.6; }
 .muted { color: #706a78; font-size: 11px; }
 button, .tweet-button { font: inherit; cursor: pointer; border-radius: 6px; }
 button:disabled { cursor: wait; opacity: .6; }
-button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid #926dcb; outline-offset: 3px; }
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid #926dcb; outline-offset: 3px; }
 /* 未集計時は開始操作を強調し、完了後は作品数の横に小さい再集計操作を置く。 */
 .controls { display: flex; align-items: center; gap: 8px; }
 .primary { flex: 1; padding: 11px; background: #7148b5; color: #fff; border: 0; }
@@ -36,10 +36,17 @@ progress { width: 100%; height: 5px; accent-color: #7148b5; }
 /* 投稿操作はランキング直後に置き、6位以降の一覧は展開時だけ高さを制限する。 */
 .tweet-button { display: block; padding: 11px; background: #25212b; color: #fff; text-align: center; text-decoration: none; }
 .tweet-button:hover { background: #43394e; }
+.tweet-button[aria-disabled="true"] { pointer-events: none; opacity: .6; }
 details { margin-top: 12px; }
 summary { cursor: pointer; color: #706a78; font-size: 11px; }
 #remaining-tags { max-height: 180px; overflow-y: auto; margin: 6px 0 0; }
 #coverage { margin: 12px 0 0; }
+/* 設定は必要なときだけ展開し、長いタグ一覧がポップアップを押し広げないようにする。 */
+.settings-description { margin: 8px 0; }
+#excluded-tags { max-height: 180px; overflow-y: auto; margin-bottom: 8px; }
+.exclusion-option { display: flex; align-items: center; gap: 8px; padding: 7px 0; cursor: pointer; }
+.exclusion-option input { flex: none; margin: 0; accent-color: #7148b5; }
+.exclusion-option span { overflow-wrap: anywhere; }
 footer { display: flex; justify-content: space-between; gap: 12px; padding: 12px 20px 16px; border-top: 1px solid #eeeaf2; }
 footer a, .text-button { color: #706a78; font: inherit; font-size: 11px; text-decoration: none; }
 .text-button { background: none; border: 0; padding: 0; }

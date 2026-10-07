@@ -36,6 +36,13 @@
         <details id="more-tags" hidden><summary id="more-title">すべてのタグ</summary><ol id="remaining-tags" class="ranking" start="6"></ol></details>
         <p id="coverage" class="muted" hidden></p>
       </section>
+      <!-- 設定は折りたたみ、除外中のタグも一覧に残して後から解除できるようにする。 -->
+      <details id="tag-settings" hidden>
+        <summary id="tag-settings-title">タグの除外</summary>
+        <p class="muted settings-description">チェックしたタグをランキングとツイートから除外します。</p>
+        <div id="excluded-tags" role="group" aria-label="除外するタグ"></div>
+        <button id="reset-exclusions" class="text-button" disabled>除外をすべて解除</button>
+      </details>
     </main>
     <footer>
       <a href="https://www.dlsite.com/maniax/mypage/userbuy/=/type/all/start/all" target="_blank" rel="noopener noreferrer">DLsiteの購入履歴</a>

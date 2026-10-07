@@ -1,5 +1,7 @@
 /** ジョブの保存形式、表示用データ、タグの並び順、Xの投稿文を定義する。 */
 export const STORAGE_KEY = "analysis";
+// 除外設定だけは端末内に保存し、集計データのセッションとは独立して引き継ぐ。
+export const EXCLUDED_TAGS_KEY = "excludedTags";
 // type/allとstart/allで、作品種別や購入年月を絞らずにページを巡回する。
 export const HISTORY_BASE = "https://www.dlsite.com/maniax/mypage/userbuy/=/type/all/start/all/sort/1/order/1/page/";
 
@@ -37,6 +39,12 @@ export function newJob(id = crypto.randomUUID(), now = Date.now()) {
 export function rankTags(counts) {
   return counts.map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, "ja"));
+}
+
+/** 元の件数を変更せず、除外されていないタグを順位順で返す。 */
+export function visibleTags(ranking, excludedTags = []) {
+  const excluded = new Set(excludedTags);
+  return ranking.filter(({ tag }) => !excluded.has(tag));
 }
 
 /** 大きい作品一覧や再開用データを含めず、ポップアップに必要な状態だけを返す。 */

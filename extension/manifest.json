@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SeihekiRouei",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DLsiteの全購入履歴を集計し、購入作品のタグランキングと上位5タグのツイートを作成します。",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "offscreen"],
