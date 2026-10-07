@@ -1,0 +1,9 @@
+# 依存関係と再生成できる配布用ファイル。
+node_modules/
+dist/
+release/
+# テストの画像・トレース・レポートはローカルの検証成果物として扱う。
+test-results/
+playwright-report/
+# macOSが作る表示設定ファイル。
+.DS_Store

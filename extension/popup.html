@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- ポップアップの画面構造。状態に応じた表示切替はpopup.js、装飾は外部CSSで行う。 -->
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SeihekiRouei</title>
+    <link rel="stylesheet" href="popup.css">
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body>
+    <header><h1>SeihekiRouei</h1></header>
+    <main>
+      <section id="intro">
+        <p class="muted">DLsiteにログインしてから集計してください。</p>
+      </section>
+      <!-- 状態取得前の開始ボタンは無効にし、実行中のジョブとの重複を防ぐ。 -->
+      <div id="controls" class="controls">
+        <p id="total-summary" hidden>購入作品：<strong id="total-works"></strong></p>
+        <button id="analyze" class="primary" disabled>購入履歴を集計する</button>
+        <button id="stop" class="secondary" hidden>集計を中止</button>
+      </div>
+      <!-- 履歴取得中は不定の進捗、タグ集計中は処理済み作品数に応じた進捗を表示する。 -->
+      <section id="progress" hidden aria-label="集計の進捗">
+        <p id="status" role="status" aria-live="polite"></p>
+        <progress id="progress-bar" aria-label="タグ集計の進捗"></progress>
+      </section>
+      <p id="error" class="error" role="alert" hidden></p>
+      <p id="cancelled" class="muted" hidden>集計を中止しました。もう一度集計できます。</p>
+      <!-- 完了時だけ結果を表示し、上位5件と残りのタグを分けて画面を簡潔に保つ。 -->
+      <section id="result" hidden aria-labelledby="result-title">
+        <h2 id="result-title">タグランキング</h2>
+        <ol id="top-tags" class="ranking"></ol>
+        <p id="empty" class="muted" hidden></p>
+        <a id="tweet" class="tweet-button" target="_blank" rel="noopener noreferrer" hidden>上位5タグをツイートする</a>
+        <details id="more-tags" hidden><summary id="more-title">すべてのタグ</summary><ol id="remaining-tags" class="ranking" start="6"></ol></details>
+        <p id="coverage" class="muted" hidden></p>
+      </section>
+    </main>
+    <footer>
+      <a href="https://www.dlsite.com/maniax/mypage/userbuy/=/type/all/start/all" target="_blank" rel="noopener noreferrer">DLsiteの購入履歴</a>
+      <button id="clear" class="text-button" hidden>データを削除</button>
+    </footer>
+  </body>
+</html>
