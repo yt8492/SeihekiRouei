@@ -19,6 +19,27 @@ test("ChromeのログインCookieを付け、リクエスト間隔を空ける",
   assert.deepEqual(waits, [600]);
 });
 
+test("comipoへ移動した旧comic作品は通信前に取得不可とし、再試行しない", async () => {
+  const requests = [], waits = [];
+  const client = createClient({
+    async fetchImpl(url) { requests.push(url); throw new TypeError("CSP blocked redirect"); },
+    async wait(delay) { waits.push(delay); },
+  });
+  await assert.rejects(client.getTags({ id: "BJ03032468", url: "https://www.dlsite.com/comic/work/=/product_id/BJ03032468.html?locale=ja_JP" }), { code: "WORK_UNAVAILABLE" });
+  assert.deepEqual(requests, []);
+  assert.deepEqual(waits, []);
+});
+
+test("同じBJ番号の形式でも、DLsite内のbooks作品は通常どおりタグを取得する", async () => {
+  const requests = [];
+  const client = createClient({
+    async fetchImpl(url) { requests.push(url); return new Response(await fixture("work.html")); },
+  });
+  const book = { id: "BJ000007", url: "https://www.dlsite.com/books/work/=/product_id/BJ000007.html?locale=ja_JP" };
+  assert.deepEqual(await client.getTags(book), ["ASMR", "日常/生活"]);
+  assert.deepEqual(requests, [book.url]);
+});
+
 test("429のRetry-Afterを守って再試行する", async () => {
   const waits = [];
   let requests = 0;

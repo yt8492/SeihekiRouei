@@ -13,7 +13,7 @@ export async function createMockDlsite() {
   // 実サービスに使わない公開テスト鍵。この証明書の公開鍵だけをテストブラウザで許可する。
   const spki = new X509Certificate(cert).publicKey.export({ type: "spki", format: "der" });
   const fingerprint = createHash("sha256").update(spki).digest("base64");
-  let options = { loggedIn: true, failWork: false, delayed: false, empty: false, loginMarkup: false };
+  let options = { loggedIn: true, failWork: false, delayed: false, empty: false, loginMarkup: false, comipo: false };
   const requests = [];
   const errors = [];
   const server = createServer({ key, cert }, async (request, response) => {
@@ -31,11 +31,20 @@ export async function createMockDlsite() {
         response.end();
       } else if (url.pathname.includes("/mypage/userbuy/")) {
         const page = url.pathname.match(/\/page\/(\d+)/u)?.[1];
-        response.end(withPageDecorations(await fixture(options.empty ? "empty-history.html" : `history-${page}.html`)));
+        let html = await fixture(options.empty ? "empty-history.html" : `history-${page}.html`);
+        if (options.comipo && !options.empty && page === "3") {
+          // 旧comicと現在も取得できるbooksを同じ購入履歴に混ぜ、BJ作品の一括除外を検知する。
+          html = html.replace("</tbody>", '<tr><td class="work_name"><a href="/comic/work/=/product_id/BJ03032468.html">comipoへ移動した作品</a></td><td class="buy_date">2026/03/01</td></tr></tbody>');
+        }
+        response.end(withPageDecorations(html));
       } else {
         const id = url.pathname.match(/product_id\/([^/.]+)/u)?.[1].toUpperCase();
         if (options.delayed) await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
-        if (id === "RJ000005") {
+        if (url.pathname.startsWith("/comic/")) {
+          // 実サイトと同じ外部への302転送。修正前はここでCSP違反になり集計が止まる。
+          response.writeHead(302, { Location: `https://www.comipo.app/product/${id}?locale=ja_JP` });
+          response.end();
+        } else if (id === "RJ000005") {
           response.writeHead(404);
           response.end("Not found");
         } else if (options.failWork) {

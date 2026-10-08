@@ -83,7 +83,13 @@ export function createClient({
       }
     },
     async getTags(work) {
-      if (!workFromUrl(work.url, work.url)) throw new Error("Invalid work URL");
+      const target = workFromUrl(work.url, work.url);
+      if (!target) throw new Error("Invalid work URL");
+      // 旧comicはcomipoへ転送される。CSPでfetchが失敗する前に、取得不可の作品として扱う。
+      // BJ作品全体を除外せず、DLsite内のbooksなどは引き続き集計する。
+      if (new URL(target.url).pathname.startsWith("/comic/")) {
+        throw new AnalysisError("WORK_UNAVAILABLE", "comipoへ移動した作品のタグは集計対象外です。");
+      }
       const result = await getHtml(work.url);
       return parseTagsImpl(result.html, result.url);
     },

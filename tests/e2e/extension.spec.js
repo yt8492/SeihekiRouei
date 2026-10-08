@@ -143,11 +143,11 @@ test("全タグ除外で投稿を隠し、チェック解除や一括解除で�
   expect(extension.mock.requests).toHaveLength(requestsBeforeSettings);
 });
 
-async function mockDlsite({ context, mock }, { loggedIn = true, failWork = false, delayed = false, empty = false, loginMarkup = false } = {}) {
+async function mockDlsite({ context, mock }, { loggedIn = true, failWork = false, delayed = false, empty = false, loginMarkup = false, comipo = false } = {}) {
   if (loggedIn) await context.addCookies([{ name: "test-session", value: "mock-login", url: "https://www.dlsite.com", sameSite: "Strict" }]);
   // offscreenの通信はPlaywrightのルーティング対象にならないため、ローカルHTTPSで応答する。
   // URLのoriginを変えず、ホスト権限とCookieのブラウザ側の扱いも検証する。
-  mock.configure({ loggedIn, failWork, delayed, empty, loginMarkup });
+  mock.configure({ loggedIn, failWork, delayed, empty, loginMarkup, comipo });
   return mock.requests;
 }
 
@@ -193,6 +193,27 @@ test("全履歴を集計し、ポップアップ再表示後に上位5つの投�
   await expect(popup.locator("#intro")).toBeVisible();
   await expect(popup.locator("#tweet")).toBeHidden();
   expect(await popup.evaluate(() => chrome.storage.session.get("analysis"))).toEqual({});
+});
+
+test("comipo作品が混ざっても取得不可として集計を完了し、DLsiteのBJ作品は残す", async ({ extension }) => {
+  const { context, popupUrl } = extension;
+  const requests = await mockDlsite(extension, { comipo: true });
+  const popup = await context.newPage();
+  await popup.goto(popupUrl);
+  await popup.getByRole("button", { name: "購入履歴を集計する" }).click();
+  await expect(popup.locator("#result")).toBeVisible({ timeout: 20000 });
+  await expect(popup.locator("#total-works")).toHaveText("8作品");
+  await expect(popup.locator("#top-tags li").first()).toContainText("ASMR");
+  await expect(popup.locator("#top-tags li").first()).toContainText("4作品");
+  await expect(popup.locator("#coverage")).toContainText("タグ取得不可：3作品");
+  await expect(popup.locator("#tweet")).toHaveAttribute("href", /ASMR/u);
+  await expect(popup.getByRole("alert")).toBeHidden();
+  expect(requests.filter(({ url }) => url.includes("/mypage/userbuy/"))).toHaveLength(3);
+  expect(requests.filter(({ url }) => url.includes("BJ000007"))).toHaveLength(1);
+  expect(requests.filter(({ url }) => url.includes("/comic/") || url.includes("comipo.app"))).toHaveLength(0);
+  const job = await popup.evaluate(async () => (await chrome.storage.session.get("analysis")).analysis);
+  expect(job.cursor).toBe(8);
+  expect(job.works.find(({ id }) => id === "BJ03032468")).toBeDefined();
 });
 
 test("未ログイン時は案内を表示し、ツイートを有効にしない", async ({ extension }) => {
